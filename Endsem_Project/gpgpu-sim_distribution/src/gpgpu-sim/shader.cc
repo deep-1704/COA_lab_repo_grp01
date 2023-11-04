@@ -166,15 +166,18 @@ void shader_core_ctx::create_schedulers() {
   // must currently occur after all inputs have been initialized.
   std::string sched_config = m_config->gpgpu_scheduler_string;
   const concrete_scheduler scheduler =
-      sched_config.find("lrr") != std::string::npos ? CONCRETE_SCHEDULER_LRR
-      : sched_config.find("two_level_active") != std::string::npos
-          ? CONCRETE_SCHEDULER_TWO_LEVEL_ACTIVE
-      : sched_config.find("gto") != std::string::npos ? CONCRETE_SCHEDULER_GTO
-      : sched_config.find("old") != std::string::npos
-          ? CONCRETE_SCHEDULER_OLDEST_FIRST
-      : sched_config.find("warp_limiting") != std::string::npos
-          ? CONCRETE_SCHEDULER_WARP_LIMITING
-          : NUM_CONCRETE_SCHEDULERS;
+      sched_config.find("lrr") != std::string::npos
+          ? CONCRETE_SCHEDULER_LRR
+          : sched_config.find("two_level_active") != std::string::npos
+                ? CONCRETE_SCHEDULER_TWO_LEVEL_ACTIVE
+                : sched_config.find("gto") != std::string::npos
+                      ? CONCRETE_SCHEDULER_GTO
+                      : sched_config.find("old") != std::string::npos
+                            ? CONCRETE_SCHEDULER_OLDEST_FIRST
+                            : sched_config.find("warp_limiting") !=
+                                      std::string::npos
+                                  ? CONCRETE_SCHEDULER_WARP_LIMITING
+                                  : NUM_CONCRETE_SCHEDULERS;
   assert(scheduler != NUM_CONCRETE_SCHEDULERS);
 
   for (unsigned i = 0; i < m_config->gpgpu_num_sched_per_core; i++) {
@@ -1021,9 +1024,23 @@ void shader_core_ctx::issue_warp(register_set &pipe_reg_set,
   m_warp[warp_id]->set_next_pc(next_inst->pc + next_inst->isize);
 }
 
+void shader_core_ctx::switch_to_KAWS(){
+  schedulers.clear();
+  for (unsigned i = 0; i < m_config->gpgpu_num_sched_per_core; i++){
+    schedulers.push_back(new kaws_scheduler(
+      m_stats, this, m_scoreboard, m_simt_stack, &m_warp,
+              &m_pipeline_reg[ID_OC_SP], &m_pipeline_reg[ID_OC_DP],
+              &m_pipeline_reg[ID_OC_SFU], &m_pipeline_reg[ID_OC_INT],
+              &m_pipeline_reg[ID_OC_TENSOR_CORE], m_specilized_dispatch_reg,
+              &m_pipeline_reg[ID_OC_MEM], i));
+  }
+  printf("\n------------Scheduler switched to KAWS------------\n");
+}
+
 void shader_core_ctx::issue() {
   // Ensure fair round robin issu between schedulers
   unsigned j;
+  if(false)switch_to_KAWS();
   for (unsigned i = 0; i < schedulers.size(); i++) {
     j = (Issue_Prio + i) % schedulers.size();
     schedulers[j]->cycle();
@@ -1077,6 +1094,30 @@ void scheduler_unit::order_lrr(
     }
     result_list.push_back(*iter);
   }
+}
+///////////////////////////////////////////////////////////////////////////////////////////////////
+// bool comp(T w1, T w2){
+//   return ((w1->issued_count) < (w2->issued_count));
+// }
+template <class T>
+void scheduler_unit::order_kaws(
+    std::vector<T> &result_list, const typename std::vector<T> &input_list,
+    const typename std::vector<T>::const_iterator &last_issued_from_input,
+    unsigned num_warps_to_add,
+    bool (*comp)(T lhs, T rhs)) {
+  assert(num_warps_to_add <= input_list.size());
+  result_list.clear();
+  // typename std::vector<T>::const_iterator iter = input_list.begin();
+
+  typename std::vector<T> temp = input_list;
+  sort(temp.begin(),temp.end(),comp);
+
+  typename std::vector<T>::iterator iter = temp.begin();
+  for (unsigned count = 0; count < num_warps_to_add; ++count, ++iter) {
+    result_list.push_back(*iter);
+  }
+
+  printf("-----------Ordered by KAWS------------");
 }
 
 /**
@@ -1402,6 +1443,8 @@ void scheduler_unit::cycle() {
            supervised_iter != m_supervised_warps.end(); ++supervised_iter) {
         if (*iter == *supervised_iter) {
           m_last_supervised_issued = supervised_iter;
+          (*m_last_supervised_issued)->issued_count++;
+          printf("Warp id: %u, issued_count: %u\n",(*m_last_supervised_issued)->get_warp_id(),(*m_last_supervised_issued)->issued_count);
         }
       }
 
@@ -1448,10 +1491,19 @@ bool scheduler_unit::sort_warps_by_oldest_dynamic_id(shd_warp_t *lhs,
     return lhs < rhs;
   }
 }
+bool scheduler_unit::sort_warps_by_least_issue_count(shd_warp_t *lhs,
+                                                     shd_warp_t *rhs) {
+  return ((lhs->issued_count) < (rhs->issued_count));
+}
 
 void lrr_scheduler::order_warps() {
   order_lrr(m_next_cycle_prioritized_warps, m_supervised_warps,
             m_last_supervised_issued, m_supervised_warps.size());
+}
+
+void kaws_scheduler::order_warps() {
+  order_kaws(m_next_cycle_prioritized_warps, m_supervised_warps,
+            m_last_supervised_issued, m_supervised_warps.size(),scheduler_unit::sort_warps_by_least_issue_count);
 }
 
 void gto_scheduler::order_warps() {

@@ -117,6 +117,7 @@ class shd_warp_t {
     m_done_exit = true;
     m_last_fetch = 0;
     m_next = 0;
+    issued_count = 0;
 
     // Jin: cdp support
     m_cdp_latency = 0;
@@ -282,6 +283,7 @@ class shd_warp_t {
  public:
   unsigned int m_cdp_latency;
   bool m_cdp_dummy;
+  unsigned issued_count;
 };
 
 inline unsigned hw_tid_from_wid(unsigned wid, unsigned warp_size, unsigned i) {
@@ -370,6 +372,14 @@ class scheduler_unit {  // this can be copied freely, so can be used in std
       const typename std::vector<T>::const_iterator &last_issued_from_input,
       unsigned num_warps_to_add);
 
+  template <typename T>
+  void order_kaws(
+      typename std::vector<T> &result_list,
+      const typename std::vector<T> &input_list,
+      const typename std::vector<T>::const_iterator &last_issued_from_input,
+      unsigned num_warps_to_add,bool (*priority_func)(T lhs, T rhs));
+  static bool sort_warps_by_least_issue_count(shd_warp_t *lhs, shd_warp_t *rhs);
+
   enum OrderingType {
     // The item that issued last is prioritized first then the sorted result
     // of the priority_function
@@ -447,6 +457,25 @@ class lrr_scheduler : public scheduler_unit {
   virtual void order_warps();
   virtual void done_adding_supervised_warps() {
     m_last_supervised_issued = m_supervised_warps.end();
+  }
+};
+
+class kaws_scheduler : public scheduler_unit {
+ public:
+  kaws_scheduler(shader_core_stats *stats, shader_core_ctx *shader,
+                Scoreboard *scoreboard, simt_stack **simt,
+                std::vector<shd_warp_t *> *warp, register_set *sp_out,
+                register_set *dp_out, register_set *sfu_out,
+                register_set *int_out, register_set *tensor_core_out,
+                std::vector<register_set *> &spec_cores_out,
+                register_set *mem_out, int id)
+      : scheduler_unit(stats, shader, scoreboard, simt, warp, sp_out, dp_out,
+                       sfu_out, int_out, tensor_core_out, spec_cores_out,
+                       mem_out, id) {}
+  virtual ~kaws_scheduler() {}
+  virtual void order_warps();
+  virtual void done_adding_supervised_warps() {
+    m_last_supervised_issued = m_supervised_warps.begin();
   }
 };
 
@@ -2128,6 +2157,7 @@ class shader_core_ctx : public core_t {
 
   void decode();
 
+  void switch_to_KAWS();
   void issue();
   friend class scheduler_unit;  // this is needed to use private issue warp.
   friend class TwoLevelScheduler;

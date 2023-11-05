@@ -1221,6 +1221,7 @@ void scheduler_unit::cycle() {
       bool valid = warp(warp_id).ibuffer_next_valid();
       bool warp_inst_issued = false;
       unsigned pc, rpc;
+      int assigned_sched_id;
       m_shader->get_pdom_stack_top_info(warp_id, pI, &pc, &rpc);
       SCHED_DPRINTF(
           "Warp (warp_id %u, dynamic_warp_id %u) has valid instruction (%s)\n",
@@ -1255,11 +1256,11 @@ void scheduler_unit::cycle() {
                 (pI->op == TENSOR_CORE_LOAD_OP) ||
                 (pI->op == TENSOR_CORE_STORE_OP)) {
               if (m_mem_out->has_free(m_shader->m_config->sub_core_model,
-                                      m_id) &&
+                                      m_id,&assigned_sched_id) &&
                   (!diff_exec_units ||
                    previous_issued_inst_exec_type != exec_unit_type_t::MEM)) {
                 m_shader->issue_warp(*m_mem_out, pI, active_mask, warp_id,
-                                     m_id);
+                                     assigned_sched_id);
                 issued++;
                 issued_inst = true;
                 warp_inst_issued = true;
@@ -1268,20 +1269,20 @@ void scheduler_unit::cycle() {
             } else {
               bool sp_pipe_avail =
                   (m_shader->m_config->gpgpu_num_sp_units > 0) &&
-                  m_sp_out->has_free(m_shader->m_config->sub_core_model, m_id);
+                  m_sp_out->has_free(m_shader->m_config->sub_core_model, m_id,&assigned_sched_id);
               bool sfu_pipe_avail =
                   (m_shader->m_config->gpgpu_num_sfu_units > 0) &&
-                  m_sfu_out->has_free(m_shader->m_config->sub_core_model, m_id);
+                  m_sfu_out->has_free(m_shader->m_config->sub_core_model, m_id,&assigned_sched_id);
               bool tensor_core_pipe_avail =
                   (m_shader->m_config->gpgpu_num_tensor_core_units > 0) &&
                   m_tensor_core_out->has_free(
-                      m_shader->m_config->sub_core_model, m_id);
+                      m_shader->m_config->sub_core_model, m_id,&assigned_sched_id);
               bool dp_pipe_avail =
                   (m_shader->m_config->gpgpu_num_dp_units > 0) &&
-                  m_dp_out->has_free(m_shader->m_config->sub_core_model, m_id);
+                  m_dp_out->has_free(m_shader->m_config->sub_core_model, m_id,&assigned_sched_id);
               bool int_pipe_avail =
                   (m_shader->m_config->gpgpu_num_int_units > 0) &&
-                  m_int_out->has_free(m_shader->m_config->sub_core_model, m_id);
+                  m_int_out->has_free(m_shader->m_config->sub_core_model, m_id,&assigned_sched_id);
 
               // This code need to be refactored
               if (pI->op != TENSOR_CORE_OP && pI->op != SFU_OP &&
@@ -1332,14 +1333,14 @@ void scheduler_unit::cycle() {
 
                 if (execute_on_SP) {
                   m_shader->issue_warp(*m_sp_out, pI, active_mask, warp_id,
-                                       m_id);
+                                       assigned_sched_id);
                   issued++;
                   issued_inst = true;
                   warp_inst_issued = true;
                   previous_issued_inst_exec_type = exec_unit_type_t::SP;
                 } else if (execute_on_INT) {
                   m_shader->issue_warp(*m_int_out, pI, active_mask, warp_id,
-                                       m_id);
+                                       assigned_sched_id);
                   issued++;
                   issued_inst = true;
                   warp_inst_issued = true;
@@ -1351,7 +1352,7 @@ void scheduler_unit::cycle() {
                                                   exec_unit_type_t::DP)) {
                 if (dp_pipe_avail) {
                   m_shader->issue_warp(*m_dp_out, pI, active_mask, warp_id,
-                                       m_id);
+                                       assigned_sched_id);
                   issued++;
                   issued_inst = true;
                   warp_inst_issued = true;
@@ -1366,7 +1367,7 @@ void scheduler_unit::cycle() {
                                                 exec_unit_type_t::SFU)) {
                 if (sfu_pipe_avail) {
                   m_shader->issue_warp(*m_sfu_out, pI, active_mask, warp_id,
-                                       m_id);
+                                       assigned_sched_id);
                   issued++;
                   issued_inst = true;
                   warp_inst_issued = true;
@@ -1377,7 +1378,7 @@ void scheduler_unit::cycle() {
                                                   exec_unit_type_t::TENSOR)) {
                 if (tensor_core_pipe_avail) {
                   m_shader->issue_warp(*m_tensor_core_out, pI, active_mask,
-                                       warp_id, m_id);
+                                       warp_id, assigned_sched_id);
                   issued++;
                   issued_inst = true;
                   warp_inst_issued = true;
@@ -1394,11 +1395,11 @@ void scheduler_unit::cycle() {
                     (m_shader->m_config->m_specialized_unit[spec_id].num_units >
                      0) &&
                     spec_reg_set->has_free(m_shader->m_config->sub_core_model,
-                                           m_id);
+                                           m_id,&assigned_sched_id);
 
                 if (spec_pipe_avail) {
                   m_shader->issue_warp(*spec_reg_set, pI, active_mask, warp_id,
-                                       m_id);
+                                       assigned_sched_id);
                   issued++;
                   issued_inst = true;
                   warp_inst_issued = true;

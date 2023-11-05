@@ -2281,6 +2281,7 @@ class shader_core_ctx : public core_t {
 
   // Jin: concurrent kernels on a sm
  public:
+  bool last_cta_detected;
   bool can_issue_1block(kernel_info_t &kernel);
   bool occupy_shader_resource_1block(kernel_info_t &kernel, bool occupy);
   void release_shader_resource_1block(unsigned hw_ctaid, kernel_info_t &kernel);

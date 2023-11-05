@@ -164,6 +164,7 @@ void shader_core_ctx::create_schedulers() {
 
   // scedulers
   // must currently occur after all inputs have been initialized.
+
   std::string sched_config = m_config->gpgpu_scheduler_string;
   const concrete_scheduler scheduler =
       sched_config.find("lrr") != std::string::npos
@@ -226,6 +227,7 @@ void shader_core_ctx::create_schedulers() {
         abort();
     };
   }
+
 
   for (unsigned i = 0; i < m_warp.size(); i++) {
     // distribute i's evenly though schedulers;
@@ -473,7 +475,7 @@ void shader_core_ctx::reinit(unsigned start_thread, unsigned end_thread,
   if (reset_not_completed) {
     m_not_completed = 0;
     m_active_threads.reset();
-
+    last_cta_detected=false;
     // Jin: for concurrent kernels on a SM
     m_occupied_n_threads = 0;
     m_occupied_shmem = 0;
@@ -1034,13 +1036,22 @@ void shader_core_ctx::switch_to_KAWS(){
               &m_pipeline_reg[ID_OC_TENSOR_CORE], m_specilized_dispatch_reg,
               &m_pipeline_reg[ID_OC_MEM], i));
   }
+  for (unsigned i = 0; i < m_warp.size(); i++) {
+    // distribute i's evenly though schedulers;
+    schedulers[i % m_config->gpgpu_num_sched_per_core]->add_supervised_warp_id(
+        i);
+  }
+  for (unsigned i = 0; i < m_config->gpgpu_num_sched_per_core; ++i) {
+    schedulers[i]->done_adding_supervised_warps();
+  }
   printf("\n------------Scheduler switched to KAWS------------\n");
+  last_cta_detected=false;
 }
 
 void shader_core_ctx::issue() {
   // Ensure fair round robin issu between schedulers
   unsigned j;
-  if(false)switch_to_KAWS();
+  if(last_cta_detected)switch_to_KAWS();
   for (unsigned i = 0; i < schedulers.size(); i++) {
     j = (Issue_Prio + i) % schedulers.size();
     schedulers[j]->cycle();
@@ -1117,7 +1128,7 @@ void scheduler_unit::order_kaws(
     result_list.push_back(*iter);
   }
 
-  printf("-----------Ordered by KAWS------------");
+  printf("\n-----------Ordered by KAWS------------\n");
 }
 
 /**
@@ -1508,6 +1519,7 @@ void kaws_scheduler::order_warps() {
 }
 
 void gto_scheduler::order_warps() {
+  printf("\n-----Ordered by gto -----\n");
   order_by_priority(m_next_cycle_prioritized_warps, m_supervised_warps,
                     m_last_supervised_issued, m_supervised_warps.size(),
                     ORDERING_GREEDY_THEN_PRIORITY_FUNC,
@@ -4271,6 +4283,10 @@ unsigned simt_core_cluster::issue_block2core() {
       m_core[core]->issue_block2core(*kernel);
       num_blocks_issued++;
       m_cta_issue_next_core = core;
+
+      if(kernel->no_more_ctas_to_run()){
+        m_core[core]->last_cta_detected=true;
+      }
       break;
     }
   }

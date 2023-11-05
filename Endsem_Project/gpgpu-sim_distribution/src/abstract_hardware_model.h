@@ -1305,6 +1305,7 @@ class register_set {
     if (!sub_core_model) return has_free();
 
     assert(reg_id < regs.size());
+    // *assigned_sched_id=reg_id;
     // return regs[reg_id]->empty();
      //////////////////////////////////////WARP SHARING MECHANISM /////////
     unsigned int reg_size=regs.size();

@@ -50,6 +50,7 @@
 #include "l2cache.h"
 #include "shader.h"
 #include "stat-tool.h"
+#include "../Constants.h"
 
 #include "../../libcuda/gpgpu_context.h"
 #include "../abstract_hardware_model.h"
@@ -65,6 +66,7 @@
 #include "power_stat.h"
 #include "stats.h"
 #include "visualizer.h"
+#include "../Constants.h"
 
 #ifdef GPGPUSIM_POWER_MODEL
 #include "power_interface.h"
@@ -79,6 +81,8 @@ class gpgpu_sim_wrapper {};
 #include <string>
 
 #define MAX(a, b) (((a) > (b)) ? (a) : (b))
+
+// unsigned long long constants[NUM_COUNTERS];
 
 bool g_interactive_debugger_enabled = false;
 
@@ -1233,10 +1237,9 @@ void gpgpu_sim::clear_executed_kernel_info() {
 }
 void gpgpu_sim::gpu_print_stat() {
   FILE *statfout = stdout;
-
   std::string kernel_info_str = executed_kernel_info_string();
   fprintf(statfout, "%s", kernel_info_str.c_str());
-
+  printf("[[[[[[[[[[[[[[[[[[[[[[Last cta total cycles : %llu .]]]]]]]]]]]]]]]]]]]]]]]]]]\n",constants[1]);
   printf("gpu_sim_cycle = %lld\n", gpu_sim_cycle);
   printf("gpu_sim_insn = %lld\n", gpu_sim_insn);
   printf("gpu_ipc = %12.4f\n", (float)gpu_sim_insn / gpu_sim_cycle);
@@ -1574,6 +1577,7 @@ unsigned exec_shader_core_ctx::sim_init_thread(
 }
 
 void shader_core_ctx::issue_block2core(kernel_info_t &kernel) {
+  
   if (!m_config->gpgpu_concurrent_kernel_sm)
     set_max_cta(kernel);
   else
@@ -1635,6 +1639,7 @@ void shader_core_ctx::issue_block2core(kernel_info_t &kernel) {
   symbol_table *symtab = kernel_func_info->get_symtab();
   unsigned ctaid = kernel.get_next_cta_id_single();
   checkpoint *g_checkpoint = new checkpoint();
+  
   for (unsigned i = start_thread; i < end_thread; i++) {
     m_threadState[i].m_cta_id = free_cta_hw_id;
     unsigned warp_id = i / m_config->warp_size;
@@ -1657,6 +1662,10 @@ void shader_core_ctx::issue_block2core(kernel_info_t &kernel) {
     }
     //
     warps.set(warp_id);
+    
+  }
+    if(kernel.no_more_ctas_to_run()){
+    last_cta_detected=true;
   }
   assert(nthreads_in_block > 0 &&
          nthreads_in_block <=

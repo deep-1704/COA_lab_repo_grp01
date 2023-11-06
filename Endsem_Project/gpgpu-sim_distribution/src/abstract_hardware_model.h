@@ -1374,7 +1374,7 @@ class register_set {
     assert(0 && "No free registers found");
     return NULL;
   }
-
+  
   warp_inst_t **get_free(bool sub_core_model, unsigned reg_id) {
     // in subcore model, each sched has a one specific reg to use (based on
     // sched id)

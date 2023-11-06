@@ -37,6 +37,7 @@
 #include "gpgpu-sim/icnt_wrapper.h"
 #include "option_parser.h"
 #include "stream_manager.h"
+#include "Constants.h"
 
 #define MAX(a, b) (((a) > (b)) ? (a) : (b))
 
@@ -70,6 +71,7 @@ void *gpgpu_sim_thread_sequential(void *ctx_ptr) {
 static void termination_callback() {
   printf("GPGPU-Sim: *** exit detected ***\n");
   fflush(stdout);
+  std::printf("Number of times scheduler switched: %u \n",constants[0]);
 }
 
 void *gpgpu_sim_thread_concurrent(void *ctx_ptr) {
